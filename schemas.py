@@ -1,48 +1,128 @@
 """
-Database Schemas
+Database Schemas for the Social Creator Platform
 
-Define your MongoDB collection schemas here using Pydantic models.
-These schemas are used for data validation in your application.
+Each Pydantic model represents a MongoDB collection. The collection name is the
+lowercased class name (e.g., User -> "user").
 
-Each Pydantic model represents a collection in your database.
-Model name is converted to lowercase for the collection name:
-- User -> "user" collection
-- Product -> "product" collection
-- BlogPost -> "blogs" collection
+These schemas are used for validation in request bodies and to keep a consistent
+shape for documents stored via the helper functions in database.py
 """
+from __future__ import annotations
+from typing import List, Optional, Literal, Dict
+from pydantic import BaseModel, Field, HttpUrl
 
-from pydantic import BaseModel, Field
-from typing import Optional
-
-# Example schemas (replace with your own):
+# Core user and profile
+class ProfileSettings(BaseModel):
+    bio: Optional[str] = None
+    avatar_url: Optional[HttpUrl] = None
+    banner_url: Optional[HttpUrl] = None
+    theme: Optional[str] = Field(default="light")
+    links: Optional[List[HttpUrl]] = None
+    privacy_level: Literal["public", "followers", "subscribers", "private"] = "public"
 
 class User(BaseModel):
-    """
-    Users collection schema
-    Collection name: "user" (lowercase of class name)
-    """
-    name: str = Field(..., description="Full name")
+    username: str = Field(..., description="Unique handle")
     email: str = Field(..., description="Email address")
-    address: str = Field(..., description="Address")
-    age: Optional[int] = Field(None, ge=0, le=120, description="Age in years")
-    is_active: bool = Field(True, description="Whether user is active")
+    name: Optional[str] = None
+    settings: Optional[ProfileSettings] = None
+    is_creator: bool = True
+    verified: bool = False
 
-class Product(BaseModel):
-    """
-    Products collection schema
-    Collection name: "product" (lowercase of class name)
-    """
-    title: str = Field(..., description="Product title")
-    description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
-    category: str = Field(..., description="Product category")
-    in_stock: bool = Field(True, description="Whether product is in stock")
+# Monetization
+class SubscriptionPlan(BaseModel):
+    creator_id: str
+    title: str
+    price_cents: int = Field(..., ge=0)
+    currency: str = Field(default="USD")
+    benefits: List[str] = []
+    tier: Literal["bronze","silver","gold","platinum"] = "bronze"
 
-# Add your own schemas here:
-# --------------------------------------------------
+class Subscription(BaseModel):
+    creator_id: str
+    subscriber_id: str
+    plan_id: str
+    status: Literal["active","canceled","past_due"] = "active"
+    renews_at: Optional[str] = None
 
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+class Payment(BaseModel):
+    user_id: str
+    amount_cents: int
+    currency: str = "USD"
+    purpose: Literal["subscription","tip","purchase"] = "subscription"
+    provider: Literal["stripe","paypal","mock"] = "mock"
+    status: Literal["initiated","succeeded","failed"] = "initiated"
+    metadata: Optional[Dict[str, str]] = None
+
+# Content
+class DRMPolicy(BaseModel):
+    watermark: bool = True
+    expire_seconds: Optional[int] = 3600
+    allow_download: bool = False
+
+class Post(BaseModel):
+    author_id: str
+    content_type: Literal["text","image","short_video","live_stream","audio"]
+    text: Optional[str] = None
+    media_url: Optional[HttpUrl] = None
+    thumbnail_url: Optional[HttpUrl] = None
+    tags: List[str] = []
+    is_premium: bool = False
+    required_tier: Optional[str] = None
+    drm: Optional[DRMPolicy] = None
+    visibility: Literal["public","followers","subscribers","private"] = "public"
+
+class Comment(BaseModel):
+    post_id: str
+    author_id: str
+    text: str
+
+class Like(BaseModel):
+    post_id: str
+    user_id: str
+
+# Social & messaging
+class Message(BaseModel):
+    sender_id: str
+    recipient_id: str
+    body: str
+    thread_id: Optional[str] = None
+
+class Group(BaseModel):
+    owner_id: str
+    name: str
+    description: Optional[str] = None
+    members: List[str] = []
+
+class Notification(BaseModel):
+    user_id: str
+    type: Literal["like","comment","message","subscription","system"]
+    title: str
+    body: Optional[str] = None
+    read: bool = False
+
+# Live & audio
+class Stream(BaseModel):
+    creator_id: str
+    title: str
+    status: Literal["scheduled","live","ended"] = "scheduled"
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    access: Literal["public","subscribers","pay_per_view"] = "public"
+
+class AudioRoom(BaseModel):
+    host_id: str
+    topic: str
+    status: Literal["scheduled","live","ended"] = "scheduled"
+    speakers: List[str] = []
+
+# Analytics
+class AnalyticsEvent(BaseModel):
+    user_id: Optional[str] = None
+    event_name: str
+    properties: Dict[str, str] = {}
+
+# Minimal search index schema
+class SearchIndex(BaseModel):
+    doc_type: Literal["user","post","group"]
+    ref_id: str
+    tokens: List[str]
